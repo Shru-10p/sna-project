@@ -1,0 +1,354 @@
+\documentclass[11pt,a4paper]{article}
+
+% ---------- Packages ----------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{mathpazo}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{setspace}
+\usepackage[hidelinks]{hyperref}
+
+\setstretch{1.08}
+\setlength{\parskip}{0.45em}
+\setlength{\parindent}{0pt}
+\titleformat{\section}{\large\bfseries}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.7em}{}
+\definecolor{note}{RGB}{90,90,90}
+\newcommand{\hits}{\textsc{Hits}@100}
+\newcommand{\cn}{\mathrm{CN}}
+\renewcommand{\arraystretch}{1.2}
+
+% ---------- Title ----------
+\title{\vspace{-1em}\textbf{Common-Neighbour Completion for Link Prediction:\\
+A Literature Review Centred on IECNC}}
+\author{%
+  \begin{tabular}{@{}ccc@{}}
+    \textbf{Shruten Pande} & \textbf{Hitansh Agarwal} & \textbf{Sumantu Sharma}\\
+    230957052 & 230957218 & 230957100
+  \end{tabular}}
+\date{}
+
+\begin{document}
+\maketitle
+\vspace{-1em}
+
+\begin{abstract}
+\noindent
+Link prediction asks whether an unobserved edge exists between two nodes of a network.
+This review uses \emph{Common Neighbor Completion with Information Entropy} (IECNC)
+\cite{zhou2025iecnc} as its anchor and situates it within the line of work that moves from
+hand-crafted proximity heuristics, through learned subgraph structure (SEAL)
+\cite{zhang2018seal} and sketch-based efficiency (ELPH/BUDDY) \cite{chamberlain2023elph},
+to neural common-neighbour pooling and completion (NCN/NCNC) \cite{wang2024ncnc}.
+We summarise each method, tabulate the evidence IECNC reports against its baselines,
+and examine the contribution of its entropy term critically. We also note
+a bibliometric study of hybrid text--citation clustering \cite{janssens2007} as a
+thematically adjacent, but methodologically distinct, work. We close with open issues,
+including internal inconsistencies in the IECNC text that readers should check against its tables.
+\end{abstract}
+
+% =====================================================================
+\section{Introduction}
+Link prediction underpins friend recommendation, knowledge-graph completion, biological
+interaction discovery and citation analysis. Classical approaches score a candidate pair
+$(i,j)$ with a hand-designed function of the graph---most prominently the number of common
+neighbours $\cn(i,j)=|N(i)\cap N(j)|$ and its weighted variants. Graph neural networks (GNNs)
+promised to replace such hand-crafting, yet message-passing GNNs often under-perform simple
+heuristics on link prediction because node-level embeddings cannot count triangles
+or separate structurally equivalent nodes \cite{chamberlain2023elph}.
+A recent research thread therefore injects \emph{pairwise structural information}---especially
+common neighbours---into neural models while keeping them scalable.
+
+IECNC \cite{zhou2025iecnc} sits at the end of this thread. It builds directly on NCNC
+\cite{wang2024ncnc}, retaining the idea of completing a possibly incomplete common-neighbour
+set, and adds (i)~explicit logical neighbourhood sets (intersection, union, directional
+differences) and (ii)~an information-entropy weighting of the predicted common-neighbour
+probabilities. The remainder of this review follows that lineage and ends with a critical
+reading of IECNC's evidence.
+
+% =====================================================================
+\section{Background: From Heuristics to Learned Structure}
+\subsection{Heuristics and their limits}
+Heuristic scores such as Common Neighbours, Adamic--Adar (AA) and Resource Allocation (RA)
+are simple, interpretable and scalable, but each encodes a fixed assumption about when two
+nodes should link. SEAL's authors argue that this limits them on networks where the
+assumption fails, and propose learning a suitable heuristic from the data instead
+\cite{zhang2018seal}. In IECNC's own evaluation the three heuristics are by far the weakest
+baselines (e.g.\ \hits{} of 33.92, 39.85 and 41.07 for CN, AA and RA on Cora, versus 66.79
+for GCN) \cite{zhou2025iecnc}.
+
+\subsection{Message passing and its expressiveness gap}
+An MPNN updates each node from its neighbours' messages over several layers, and a link is
+scored from the two endpoint representations \cite{gilmer2017mpnn}. IECNC adopts this view,
+writing the link score as a function of $h_i$, $h_j$ and a pairwise context $C_{ij}$
+\cite{zhou2025iecnc}. The expressiveness limits of plain MPNN scoring are the motivation
+shared by SEAL, ELPH/BUDDY and NCN: all add pairwise or subgraph-level structure.
+
+% =====================================================================
+\section{The Lineage Leading to IECNC}
+\subsection{SEAL: learning heuristics from enclosing subgraphs}
+SEAL extracts the local subgraph around each target link, labels its nodes with
+double-radius node labelling, and classifies the subgraph with a graph-level GNN; node
+embeddings and attributes may optionally be concatenated \cite{zhang2018seal}. Its theoretical
+contribution is the $\gamma$-decaying heuristic theory, which argues that a wide family of
+high-order heuristics can be well approximated from small local subgraphs. SEAL was evaluated on eight
+networks (USAir, NS, PB, Yeast, C.ele, Power, Router, E.coli) with AUC and average precision, and the authors
+report that it generally outperformed heuristic, latent-feature and embedding baselines,
+including WLNM. The cost is that a subgraph must be built and processed for every candidate link.
+
+\subsection{ELPH and BUDDY: sketching instead of subgraphs}
+Chamberlain et al.\ analyse the components of subgraph GNNs and propose ELPH, a full-graph GNN that passes
+HyperLogLog and MinHash sketches as messages, approximating the key structural quantities
+of subgraph methods without constructing subgraphs, and is provably more expressive than
+MPNNs \cite{chamberlain2023elph}. BUDDY precomputes the sketches and diffused features so
+that prediction reduces to an MLP. The authors report BUDDY to be 200--1000$\times$
+faster than SEAL in dynamic mode on the citation dataset, while remaining competitive
+or better on Planetoid and OGB benchmarks. Their contribution is therefore primarily one of \emph{efficiency at
+comparable accuracy}.
+
+\subsection{NCN and NCNC: pooling and completing common neighbours}
+Wang et al.\ classify prior models as SF-then-MPNN (structural features augment the MPNN
+input) or SF-and-MPNN (decoupled), and propose \emph{MPNN-then-SF}: run the MPNN once on the
+input graph and use the structural common-neighbour set to \emph{guide the pooling} of
+node representations for each candidate pair. This is Neural Common Neighbor (NCN)
+\cite{wang2024ncnc}. They then study \emph{graph incompleteness}: since the prediction targets are
+by definition unobserved, the input graph lacks edges, which reduces the number of common neighbours and
+induces a train/test distribution shift. Neural Common Neighbor with Completion (NCNC)
+uses a link-prediction model's predicted edge probabilities to complete the common-neighbour
+structure before a second, NCN-style prediction. Evaluation covers seven benchmarks
+(Cora, Citeseer, PubMed, ogbl-collab, ogbl-ppa, ogbl-citation2, ogbl-ddi), with 10 random seeds,
+ablations, and runtime/memory comparisons. IECNC adopts NCNC's completion principle
+as its starting point.
+
+\begin{table}[t]
+\centering
+\caption{Summary of the surveyed link-prediction methods.}
+\label{tab:methods}
+\small
+\begin{tabular}{@{}p{2.1cm}p{4.9cm}p{3.7cm}p{3.6cm}@{}}
+\toprule
+\textbf{Method} & \textbf{Core mechanism} & \textbf{Structural signal} & \textbf{Main claim}\\
+\midrule
+SEAL \cite{zhang2018seal} & Enclosing subgraph, double-radius labelling, graph-level GNN & Learned from local subgraph ($\gamma$-decay theory) & Learned heuristics beat fixed ones\\
+ELPH / BUDDY \cite{chamberlain2023elph} & HyperLogLog/MinHash sketches as messages; precomputed in BUDDY & Approximate subgraph counts & Subgraph-level accuracy at far lower cost\\
+NCN \cite{wang2024ncnc} & MPNN run once; pool over common neighbours (MPNN-then-SF) & Observed common neighbours & Expressive and scalable\\
+NCNC \cite{wang2024ncnc} & NCN plus completion by predicted edge probabilities & Observed + predicted common neighbours & Mitigates graph incompleteness\\
+IECNC \cite{zhou2025iecnc} & Logical neighbour sets, completion probabilities, entropy weighting & Completed common neighbours, uncertainty-weighted & Further gains over NCNC\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% =====================================================================
+\section{IECNC in Detail}
+\subsection{Method}
+IECNC \cite{zhou2025iecnc} models a node pair $(i,j)$ through a \emph{logical context}
+built from neighbour sets $q_i=N(i)$ and $q_j=N(j)$:
+\begin{equation}
+C_{ij}=\{\,q_i,\; q_j,\; q_i\wedge q_j,\; q_i\vee q_j,\; q_i-q_j,\; q_j-q_i\,\},
+\end{equation}
+where $\wedge$, $\vee$ and $-$ denote intersection, union and difference. Following the
+paper's notation, each set is encoded by an MLP over the MPNN features of its members, and
+the concatenation $[h_i;h_j;Q_\vee;Q_\wedge;Q_{i-j};Q_{j-i}]$ forms $C_{ij}$.
+
+Completion is implemented through a per-node probability $P_{uij}$ that $u$ acts as a
+common neighbour of $i$ and $j$:
+\begin{equation}
+P_{uij}=
+\begin{cases}
+1, & u\in A_\cap,\\
+\operatorname{softmax}(Q_{i-j}), & u\in A_{i-j},\\
+\operatorname{softmax}(Q_{j-i}), & u\in A_{j-i},\\
+0, & \text{otherwise,}
+\end{cases}
+\end{equation}
+so that observed common neighbours receive probability~1, nodes adjacent to only one
+endpoint receive a learned probability, and the rest receive~0. The earlier, entropy-free
+variant (PPNC) aggregates $\sum_u P_{uij}\,\mathrm{MPNN}(u,M,C_{ij})$. IECNC's distinctive step
+replaces the probability weight with an information-entropy weight:
+\begin{equation}
+\mathrm{IECNC}(i,j)=-\sum_{u\in q}P_{uij}\ln P_{uij}\cdot \mathrm{MPNN}(u,M,C_{ij}).
+\end{equation}
+The authors motivate this as quantifying the uncertainty of each node's membership in the common-neighbour
+set. They also state a design simplification: because higher-order information appeared to be
+implicitly captured by first-order neighbours, only first-order neighbours and intersection-based
+set aggregation are used.
+
+\subsection{Experimental evidence}
+IECNC is evaluated on five graphs: three Planetoid citation networks (Cora, Citeseer, PubMed)
+and two Twitch gamer networks (Twitch\_RU, Twitch\_PT), using \hits{} and AUC, against
+CN, AA, RA, GCN, SAGE, SEAL, NBFNet, Neo-GNN, BUDDY, NCN and NCNC \cite{zhou2025iecnc}.
+Table~\ref{tab:results} reproduces the headline \hits{} comparison against the strongest baselines
+from the paper's Table~1.
+
+\begin{table}[t]
+\centering
+\caption{\hits{} (\%, mean $\pm$ s.d.) from Table~1 of \cite{zhou2025iecnc}; best per column in bold.
+The last row is our arithmetic on the reported means (percentage points).}
+\label{tab:results}
+\small
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+\textbf{Method} & \textbf{Cora} & \textbf{Citeseer} & \textbf{PubMed} & \textbf{Twitch\_RU} & \textbf{Twitch\_PT}\\
+\midrule
+SEAL    & 81.71 $\pm$ 1.30 & 83.89 $\pm$ 2.15 & 75.54 $\pm$ 1.32 & 50.74 $\pm$ 0.43 & 46.80 $\pm$ 3.16\\
+Neo-GNN & 80.42 $\pm$ 1.31 & 84.67 $\pm$ 2.16 & 73.93 $\pm$ 1.19 & 50.52 $\pm$ 0.37 & 44.13 $\pm$ 0.60\\
+BUDDY   & 88.00 $\pm$ 0.44 & 92.93 $\pm$ 0.27 & 74.10 $\pm$ 0.78 & 55.94 $\pm$ 0.58 & 47.85 $\pm$ 0.20\\
+NCN     & 89.05 $\pm$ 0.96 & 91.56 $\pm$ 1.43 & 79.05 $\pm$ 1.16 & 57.76 $\pm$ 0.87 & 51.19 $\pm$ 0.85\\
+NCNC    & 89.65 $\pm$ 1.36 & 93.47 $\pm$ 0.95 & 81.29 $\pm$ 0.95 & 58.61 $\pm$ 0.71 & 52.42 $\pm$ 0.73\\
+\midrule
+IECNC   & \textbf{94.68 $\pm$ 1.43} & \textbf{96.44 $\pm$ 1.63} & \textbf{87.56 $\pm$ 1.51} & \textbf{62.18 $\pm$ 2.4} & \textbf{56.27 $\pm$ 1.34}\\
+$\Delta$ vs.\ NCNC & +5.03 & +2.97 & +6.27 & +3.57 & +3.85\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+For AUC, the paper reports IECNC at 97.70\% (Cora), 99.23\% (Citeseer) and 95.26\% (Twitch\_PT),
+versus NCNC at 95.70\%, 97.66\% and 94.67\%; these values appear in the text and Fig.~3 only.
+The gain over NCNC is thus consistently positive, and largest on PubMed.
+
+\subsection{Ablations and the role of entropy}
+The paper's ablations (its Tables~2--3) vary the activation function (sigmoid vs.\ softmax),
+the completion strategy (probabilistic completion, PC, vs.\ information-entropy completion, IEC) and the components of $P_{uij}$.
+Removing the entire completion step ($P_{uij}$) causes the largest drop, followed by removing
+$A_\cap$, $A_{i-j}$ or $A_{j-i}$. Table~\ref{tab:entropy} isolates the entropy term from those ablations.
+
+\begin{table}[t]
+\centering
+\caption{Effect of replacing probabilistic completion (PC) by entropy completion (IEC),
+\hits{} (\%), from Table~2 of \cite{zhou2025iecnc}; $\Delta$ is computed from the reported means.}
+\label{tab:entropy}
+\small
+\begin{tabular}{@{}llccccc@{}}
+\toprule
+\textbf{Activation} & & \textbf{Cora} & \textbf{Citeseer} & \textbf{PubMed} & \textbf{Twitch\_RU} & \textbf{Twitch\_PT}\\
+\midrule
+softmax & PC  & 93.78 & 94.43 & 82.54 & 58.64 & 54.41\\
+softmax & IEC & 94.68 & 96.44 & 87.56 & 62.18 & 56.27\\
+\multicolumn{2}{@{}l}{\emph{$\Delta$ (softmax)}} & +0.90 & +2.01 & +5.02 & +3.54 & +1.86\\
+\midrule
+sigmoid & PC  & 89.36 & 93.99 & 81.20 & 59.04 & 54.34\\
+sigmoid & IEC & 89.96 & 93.97 & 81.69 & 57.07 & 53.71\\
+\multicolumn{2}{@{}l}{\emph{$\Delta$ (sigmoid)}} & +0.60 & $-$0.02 & +0.49 & $-$1.97 & $-$0.63\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two observations follow. First, with softmax the entropy term helps on every dataset, most
+visibly on PubMed. Second, with sigmoid the benefit is negligible or negative on three of five
+datasets, so the contribution of entropy appears to depend on the softmax parameterisation
+rather than being an independent gain. The authors themselves note that with sigmoid the two completion
+strategies differ little.
+
+% =====================================================================
+\section{Critical Reading of IECNC}
+The following points are offered as reading notes, not as a replacement for checking the original paper.
+
+\paragraph{Inconsistent headline numbers.}
+The prose of Section~5.2 reports \hits{} of 94.09\% (Cora), 95.34\% (Citeseer), 85.72\% (PubMed) and a Twitch\_RU
+standard deviation of 4.4, whereas Tables~1--3 and the Conclusion report 94.68\%, 96.44\%, 87.56\% and 2.4.
+The three tables are mutually consistent, so this review uses the table values; the discrepancy should
+nevertheless be resolved against the authors' code or results. The Fig.~4 captions also alternate between \textsc{Hits}@10 and \textsc{Hits}@3 for the lower panels.
+
+\paragraph{What the entropy weight does.}
+The paper motivates $-P\ln P$ as an uncertainty measure that is maximal near $P=0.5$. Two details
+deserve scrutiny. (i)~Eq.~(2) assigns observed common neighbours $P=1$, for which $-P\ln P=0$; as written, those
+nodes would contribute nothing to the score, yet the $A_\cap$ ablation shows they matter, suggesting that the
+implementation differs from the equation or that the role of $A_\cap$ is mediated elsewhere. (ii)~Softmax
+over a neighbour set yields small probabilities (Table~4 of the paper lists $P\approx10^{-4}$--$10^{-3}$); in that regime
+$-P\ln P$ is a smooth, monotonically increasing function of $P$, so it behaves as a re-weighting of the
+probability rather than a distinct uncertainty signal. The paper's Table~4 shows that near-identical probabilities map to
+slightly different entropy values, which demonstrates a transformation, not that the transformation improves accuracy;
+the ablation in Table~\ref{tab:entropy} is the stronger evidence.
+
+\paragraph{Scope of evaluation.}
+Despite the ``social networks'' framing, three of five datasets are citation graphs; only the two Twitch graphs are social.
+No large OGB benchmarks (ogbl-collab, -ppa, -citation2, -ddi), which NCNC and BUDDY use, are reported, and
+the paper claims scalability and efficiency without presenting runtime or memory measurements,
+unlike NCNC \cite{wang2024ncnc} and BUDDY \cite{chamberlain2023elph}. The Cora--PubMed figures for BUDDY, NCN and NCNC in its Table~1 coincide with those
+in the NCNC paper, indicating that baseline numbers were taken from prior work rather than re-run,
+which is acceptable practice but means protocol parity should be confirmed.
+
+\paragraph{Metric heterogeneity across the literature.}
+SEAL reports AUC and AP on random 10\% holdouts of small networks \cite{zhang2018seal}; BUDDY and NCNC emphasise ranking
+metrics such as \textsc{Hits}@$K$ on Planetoid and OGB splits \cite{chamberlain2023elph,wang2024ncnc}. Scores are therefore comparable only within a
+given protocol, which limits cross-paper conclusions.
+
+% =====================================================================
+\section{A Thematically Adjacent Study: Hybrid Text--Citation Clustering}
+Janssens, Gl\"anzel and De~Moor \cite{janssens2007} analyse 7{,}401 bioinformatics publications
+(Web of Science and MEDLINE, 1981--2004) across seven time windows. They combine text similarity
+(TF--IDF/LSI) with bibliographic-coupling distances through Fisher's inverse chi-square, cluster with Ward's
+method, and select the number of clusters by combining dendrogram inspection, silhouette curves and
+subsample stability. The result is nine static clusters linked into eleven evolving cluster chains.
+This is a descriptive bibliometric analysis and \emph{not} a link-prediction method, and
+it offers no comparison with the link-prediction baselines above. Its relevance is conceptual: it
+supports the broader view that combining content with graph structure is more informative than either
+alone, the same intuition behind attribute-aware structural link prediction. IECNC lists bioinformatics
+among its application domains \cite{zhou2025iecnc}, but the two works share no method or benchmark.
+
+% =====================================================================
+\section{Open Issues and Directions}
+\begin{itemize}[leftmargin=1.5em,itemsep=0.2em]
+  \item \textbf{Isolating the entropy term.} A controlled comparison against other monotone reweightings of $P_{uij}$ (and against the sigmoid setting)
+        would show whether entropy specifically, rather than extra weighting capacity, drives the gains.
+  \item \textbf{Scalability evidence.} Runtime and memory comparisons with NCNC and BUDDY on OGB-scale graphs are needed to support efficiency claims.
+  \item \textbf{Broader and temporal benchmarks.} Evaluation on genuinely social, evolving graphs would test the ``social network'' framing.
+  \item \textbf{Completion quality.} NCNC and IECNC both rely on a first-stage predictor to complete the graph; error propagation from that stage is not analysed in the text of either paper.
+  \item \textbf{Reproducibility.} Resolving the number discrepancies noted in Section~5 and releasing code would settle the headline results.
+\end{itemize}
+
+% =====================================================================
+\section{Conclusion}
+The trajectory from heuristics to SEAL, ELPH/BUDDY, NCN/NCNC and IECNC reflects a steady effort to give neural link predictors
+the pairwise structural information that simple heuristics exploit, at decreasing computational cost
+and with growing attention to missing edges. IECNC extends NCNC with logical neighbour sets and an entropy
+weighting and reports consistent \hits{} gains of roughly 3--6 points over NCNC on five datasets. The ablations support the value of
+completion and, with softmax, of the entropy term, but the evidence base is narrow, the entropy formulation raises
+questions, and the text contains inconsistencies that should be resolved before the figures are cited as definitive.
+
+% =====================================================================
+\begin{thebibliography}{99}\small
+\setlength{\itemsep}{0.2em}
+
+\bibitem{zhou2025iecnc}
+Z.~Zhou, G.~Wan, and B.~Du.
+\newblock Common neighbor completion with information entropy for link prediction in social networks.
+\newblock \emph{Data Science and Engineering}, 10:40--53, 2025.
+\newblock doi:10.1007/s41019-024-00267-6.
+
+\bibitem{wang2024ncnc}
+X.~Wang, H.~Yang, and M.~Zhang.
+\newblock Neural common neighbor with completion for link prediction.
+\newblock In \emph{International Conference on Learning Representations (ICLR)}, 2024.
+
+\bibitem{chamberlain2023elph}
+B.~P. Chamberlain, S.~Shirobokov, E.~Rossi, F.~Frasca, T.~Markovich, N.~Hammerla, M.~M. Bronstein, and M.~Hansmire.
+\newblock Graph neural networks for link prediction with subgraph sketching.
+\newblock In \emph{International Conference on Learning Representations (ICLR)}, 2023.
+\newblock arXiv:2209.15486.
+
+\bibitem{zhang2018seal}
+M.~Zhang and Y.~Chen.
+\newblock Link prediction based on graph neural networks.
+\newblock In \emph{Advances in Neural Information Processing Systems (NeurIPS)}, 31, 2018.
+
+\bibitem{janssens2007}
+F.~Janssens, W.~Gl\"anzel, and B.~De~Moor.
+\newblock Dynamic hybrid clustering of bioinformatics by incorporating text mining and citation analysis.
+\newblock In \emph{Proc.\ ACM SIGKDD International Conference on Knowledge Discovery and Data Mining (KDD'07)}, San Jose, CA, 2007.
+
+\bibitem{gilmer2017mpnn}
+J.~Gilmer, S.~S. Schoenholz, P.~F. Riley, O.~Vinyals, and G.~E. Dahl.
+\newblock Neural message passing for quantum chemistry.
+\newblock In \emph{International Conference on Machine Learning (ICML)}, pages 1263--1272, 2017.
+
+\end{thebibliography}
+
+\end{document}
